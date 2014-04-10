@@ -1,97 +1,84 @@
-import csv
 import sys
 import numpy as np
-from bokeh.plotting import *
-from bokeh.objects import Range1d, HoverTool
-from collections import OrderedDict
 import itertools as it
+import pandas as pd
+import pyqtgraph as pg
+from pyqtgraph.Qt import QtGui, QtCore
 
 file_in = sys.argv[1]
-file_out = sys.argv[2]
-tags = sys.argv[3:]
+to_plot = sys.argv[2:]
 
-clock_offset = 0
-clock_period = 10
+clock_offset = 20.0
+clock_period = 10.0
 
-class PlotRow(object):
-    def __init__(self, name):
-        self.rectStarts = []
-        self.rectStops = []
-        self.name = name
+a = pd.read_csv(file_in, sep='\t', skipinitialspace=True)
+# remove rows with dashes
+a = a[a.idx != '---']
 
-    def addValAt(self, time, val):
-        if not val.isspace():
-            if (not self.rectStops) or (time - self.rectStops[-1] != 0):
-                self.rectStarts.append(time)
-                self.rectStops.append(time + clock_period)
-            else:
-                self.rectStops[-1] = time + clock_period
+times = (a.time.astype(float) - clock_offset + (clock_period/2)) / clock_period
 
-    def __str__(self):
-        return self.name + ' starts: ' + str(self.rectStarts) + ' stops: ' + str(self.rectStops)
+if not to_plot:
+    headings = list(a.axes[1])
+    to_plot = headings[2:]
 
-    def __repr__(self):
-        return self.__str__()
+class MyAxis(pg.AxisItem):
+    def setTickStrings(self, strings):
+        self._tickStr = dict(enumerate(strings))
 
-a = csv.reader(open(file_in), delimiter='\t')
-headings = map(str.strip, next(a))
-next(a) # dashes
-time_col = headings.index('time')
+    def tickStrings(self, values, scale, spacing):
+        return [self._tickStr.get(va*scale, '') for va in values]
 
-if tags:
-    tag_cols = [headings.index(tag) for tag in tags]
-else:
-    tags = headings[2:]
-    tag_cols = range(2, len(headings))
+try:
+    app = QtGui.QApplication([])
+except RuntimeError:
+    app = QtCore.QCoreApplication.instance()
 
-plotRows = [PlotRow(name=tag) for (col, tag) in zip(tag_cols, tags)]
+mw = QtGui.QMainWindow()
+mw.resize(1600,800)
+view = pg.GraphicsLayoutWidget()  ## GraphicsView with GraphicsLayout inserted by default
+mw.setCentralWidget(view)
+mw.show()
+mw.setWindowTitle('pyqtgraph example: ScatterPlot')
 
-for line in a:
-    try:
-        time = int(line[time_col])
-    except ValueError: # done parsing the file
-        break
-    for tag_col, plotRow in zip(tag_cols, plotRows):
-        plotRow.addValAt(time, line[tag_col])
+leftAxis = MyAxis('left')
+leftAxis.setTickStrings(to_plot)
 
-output_file(file_out)
+w1 = view.addPlot(axisItems={'left':leftAxis})
+w1.showGrid(x=True, alpha=0.5)
 
-N = sum(len(row.rectStarts) for row in plotRows)
-tStart = np.zeros(shape=(N,))
-tStop = np.zeros(shape=(N,))
-y = np.zeros(shape=(N,))
-names = []
-colors = []
-colorsAvailable = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
+colors = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
 
-yi = 0
-for row, color in it.izip(plotRows, it.cycle(colorsAvailable)):
-    startIdx = len(names)
-    n = len(row.rectStarts)
-    stopIdx = startIdx + n
+for yi, (row, color) in enumerate(it.izip(to_plot, it.cycle(colors))):
+    s1 = pg.ScatterPlotItem(size=1, symbol='s', pen=pg.mkPen(None), brush=pg.mkBrush(color), pxMode=False)
+    x = np.array(times[a[row].notnull()])
+    y = np.repeat(yi, x.shape[0])
+    s1.addPoints(x=x, y=y)
+    w1.addItem(s1)
 
-    tStart[startIdx:stopIdx] = row.rectStarts
-    tStop[startIdx:stopIdx] = row.rectStops
-    y[startIdx:stopIdx] = yi
-    names.extend(it.repeat(row.name, n))
-    colors.extend(it.repeat(color, n))
+view.nextRow()
+w2 = view.addPlot()
+w2.hideAxis('left')
+t0, t1 = times.min(), times.max()
+w2.plot(x=[t0,t1], y=[1,1])
+lr = pg.LinearRegionItem([times.min(), times.max()])
+lr.setZValue(-10)
+w2.addItem(lr)
+w2.setMaximumHeight(50)
 
-    yi += 1
+def updatePlot():
+    w1.setXRange(*lr.getRegion(), padding=0)
 
-tStart = (tStart - clock_offset) / clock_period
-tStop = (tStop - clock_offset) / clock_period
-x = (tStart + tStop) / 2
-w = (tStop - tStart)
+def updateRegion():
+    lr.setRegion(w1.getViewBox().viewRange()[0])
 
-data = ColumnDataSource(data=dict(x=x, y=y, w=w, start=tStart, stop=tStop, color=colors, name=names))
-rect('x', 'y', 'w', 0.9, source=data, color='color', plot_width=1480, plot_height=800, tools="pan,resize,wheel_zoom,box_zoom,reset,hover")
+lr.sigRegionChanged.connect(updatePlot)
+w1.sigXRangeChanged.connect(updateRegion)
+updatePlot()
 
-plot = curplot()
-
-for tool in plot.tools:
-    if isinstance(tool, HoverTool):
-        hover = tool
-        break
-
-hover.tooltips = OrderedDict(name="@name", start="@start", cycles='@w', stop="@stop")
-show(browser='firefox')
+w1.setMouseEnabled(x=True, y=False)
+w2.setMouseEnabled(x=True, y=False)
+## Start Qt event loop unless running in interactive mode.
+if __name__ == '__main__':
+    import sys
+    if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
+        QtGui.QApplication.instance().exec_()
