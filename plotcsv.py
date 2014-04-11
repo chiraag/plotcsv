@@ -35,14 +35,17 @@ tags.reverse()
 def get_row_pos(tag):
     return tags.index(tag)
 
+def get_tag(row):
+    return tags[int(row + 0.5)]
+
 f = re.compile(r'tileId: (\d)') 
 colors = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
 def get_color(val):
     m = f.search(val)
     if m:
-        return colors[int(m.group(1))]
+        return colors[int(m.group(1)) + 1]
     else:
-        return colors[4]
+        return colors[0]
 
 class MyAxis(pg.AxisItem):
     def setTickStrings(self, strings):
@@ -67,19 +70,21 @@ leftAxis = MyAxis('left')
 leftAxis.setTickStrings(tags)
 
 w1 = view.addPlot(colspan=2, axisItems={'left':leftAxis})
-w1.showGrid(x=True, alpha=0.5)
+w1.showGrid(x=True, alpha=1)
 
 text = pg.TextItem(color="#ffffff", fill=(20,20,20), anchor=(1,1), border="#ffffff")
 
-#time_indexed = data.set_index('time')
-#def mouseClickEvent(obj, ev):
-#    time = int(ev.pos().x()) + 0.5
-#    row_num = int(ev.pos().y() + 0.5)
-#    row = to_plot[row_num]
-#    data = time_indexed.loc[time, row]
-#    if pd.notnull(data):
-#        text.setText(str(data))
-#        text.setPos(ev.pos())
+idx_by_tag = df.set_index('tag', append=True)
+def mouseClickEvent(obj, ev):
+    time = get_time(ev.pos().x())
+    tag = get_tag(ev.pos().y())
+    try:
+        val = idx_by_tag.loc[time, tag].val
+    except KeyError:
+        return
+
+    text.setText(val)
+    text.setPos(ev.pos())
 
 s1 = pg.ScatterPlotItem(size=1, symbol='s', pen=None, pxMode=False)
 x = get_cycle_count(np.array(df.index)) + 0.5
@@ -88,9 +93,9 @@ c = np.array(df.val.apply(get_color))
 
 s1.addPoints(x=x, y=y, brush=c)
 
-#s1.mouseClickEvent = types.MethodType(mouseClickEvent, s1)
+s1.mouseClickEvent = types.MethodType(mouseClickEvent, s1)
 w1.addItem(s1)
-#w1.addItem(text)
+w1.addItem(text)
 
 view.nextRow()
 w2 = view.addPlot()
