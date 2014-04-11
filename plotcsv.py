@@ -1,4 +1,5 @@
-import sys
+from __future__ import print_function
+import re, sys
 import numpy as np
 import itertools as it
 import pandas as pd
@@ -6,22 +7,42 @@ import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui, QtCore
 import types
 
+def get_cycle_count(time):
+    return (time - 0.0) / 10.0
+
+def get_time(cycle):
+    return int(cycle) * 10
+
+valid_line = re.compile(r'^(\s*\d+)\t(.*?)\t(.*)')
 file_in = sys.argv[1]
-to_plot = sys.argv[2:]
+tags = sys.argv[2:]
 
-clock_offset = 0.0
-clock_period = 10.0
+def clean_input(f):
+    for line in f:
+        match = valid_line.match(line)
+        if not match:
+            print(line, end='', file=sys.stderr)
+        else:
+            m = match.groups()
+            yield (int(m[0]), m[1:])
 
-data = pd.read_csv(file_in, sep='\t', skipinitialspace=True)
-# remove rows with dashes
-data = data[data.idx != '---']
-data.time = (data.time.astype(float) - clock_offset + (clock_period/2)) / clock_period
+df = pd.DataFrame.from_items(clean_input(open(file_in)), columns=['tag', 'val'], orient='index')
+if not tags:
+    tags = list(df.tag.drop_duplicates())
 
-if not to_plot:
-    headings = list(data.axes[1])
-    to_plot = headings[2:]
+tags.reverse()
 
-to_plot.reverse()
+def get_row_pos(tag):
+    return tags.index(tag)
+
+f = re.compile(r'tileId: (\d)') 
+colors = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
+def get_color(val):
+    m = f.search(val)
+    if m:
+        return colors[int(m.group(1))]
+    else:
+        return colors[4]
 
 class MyAxis(pg.AxisItem):
     def setTickStrings(self, strings):
@@ -43,39 +64,38 @@ mw.show()
 mw.setWindowTitle('Trace: {}'.format(file_in))
 
 leftAxis = MyAxis('left')
-leftAxis.setTickStrings(to_plot)
+leftAxis.setTickStrings(tags)
 
 w1 = view.addPlot(colspan=2, axisItems={'left':leftAxis})
 w1.showGrid(x=True, alpha=0.5)
 
 text = pg.TextItem(color="#ffffff", fill=(20,20,20), anchor=(1,1), border="#ffffff")
 
-time_indexed = data.set_index('time')
-def mouseClickEvent(obj, ev):
-    time = int(ev.pos().x()) + 0.5
-    row_num = int(ev.pos().y() + 0.5)
-    row = to_plot[row_num]
-    data = time_indexed.loc[time, row]
-    if pd.notnull(data):
-        text.setText(str(data))
-        text.setPos(ev.pos())
+#time_indexed = data.set_index('time')
+#def mouseClickEvent(obj, ev):
+#    time = int(ev.pos().x()) + 0.5
+#    row_num = int(ev.pos().y() + 0.5)
+#    row = to_plot[row_num]
+#    data = time_indexed.loc[time, row]
+#    if pd.notnull(data):
+#        text.setText(str(data))
+#        text.setPos(ev.pos())
 
-colors = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
+s1 = pg.ScatterPlotItem(size=1, symbol='s', pen=None, pxMode=False)
+x = get_cycle_count(np.array(df.index)) + 0.5
+y = np.array(df.tag.apply(get_row_pos))
+c = np.array(df.val.apply(get_color))
 
+s1.addPoints(x=x, y=y, brush=c)
 
-for yi, (row, color) in enumerate(it.izip(to_plot, it.cycle(colors))):
-    s1 = pg.ScatterPlotItem(size=1, symbol='s', pen=pg.mkPen(None), brush=pg.mkBrush(color), pxMode=False)
-    x = data.time[data[row].notnull()]
-    y = np.repeat(yi, x.shape)
-    s1.addPoints(x=x, y=y)
-    s1.mouseClickEvent = types.MethodType(mouseClickEvent, s1)
-    w1.addItem(s1)
-w1.addItem(text)
+#s1.mouseClickEvent = types.MethodType(mouseClickEvent, s1)
+w1.addItem(s1)
+#w1.addItem(text)
 
 view.nextRow()
 w2 = view.addPlot()
 w2.hideAxis('left')
-t0, t1 = data.time.min(), data.time.max()
+t0, t1 = x.min(), x.max()
 w2.plot(x=[t0, t1], y=[1, 1])
 lr = pg.LinearRegionItem([t0, t1])
 lr.setZValue(-10)
@@ -99,3 +119,7 @@ if __name__ == '__main__':
     import sys
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
         QtGui.QApplication.instance().exec_()
+
+
+
+
