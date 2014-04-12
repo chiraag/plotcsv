@@ -1,7 +1,6 @@
 from __future__ import print_function
 import re, sys
 import numpy as np
-import itertools as it
 import pandas as pd
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtGui, QtCore
@@ -39,7 +38,9 @@ def get_tag(row):
     return tags[int(row + 0.5)]
 
 f = re.compile(r'tileId: (\d)') 
-colors = '#377eb8,#4daf4a,#e41a1c,#984ea3,#ff7f00'.split(',')
+colors = '#377eb8,#7b3294,#c2a5cf,#a6dba0,#008837'.split(',')
+colors = [pg.mkBrush(col) for col in colors]
+
 def get_color(val):
     m = f.search(val)
     if m:
@@ -80,10 +81,10 @@ def mouseClickEvent(obj, ev):
     tag = get_tag(ev.pos().y())
     try:
         val = idx_by_tag.loc[time, tag].val
+        text.setText('cycle: {}\n'.format(time) + val)
     except KeyError:
-        return
+        text.setText('cycle: {}'.format(time))
 
-    text.setText(val)
     text.setPos(ev.pos())
 
 s1 = pg.ScatterPlotItem(size=1, symbol='s', pen=None, pxMode=False)
