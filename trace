@@ -1,0 +1,41 @@
+#!/usr/bin/env python
+"""Trace converter and plotter
+
+Usage:
+    trace listtags <in>
+    trace convert <in> <out> [TAG ...]
+    trace plot <in> [TAG ...]
+"""
+
+import file_io
+from docopt import docopt
+import sys
+
+args = docopt(__doc__, version='trace.py 0.2')
+
+fin, foo = args['<in>'], args['<out>']
+file_in = sys.stdin if fin == '-' else open(fin)
+
+# read trace file in
+df = file_io.read_trace(file_in)
+
+if args['TAG']:
+    # keep only entries with specified tags
+    tags = args['TAG']
+    df = df.query('tag in tags')
+else:
+    # get tags present in trace
+    tags = list(df.tag.drop_duplicates())
+
+if args['listtags']:
+    print(tags)
+
+elif args['convert']:
+    file_out = sys.stdout if foo == '-' else open(foo, 'w')
+    file_io.write_trace_table(df, tags, file_out)
+
+elif args['plot']:
+    import gui
+    win, qapp = gui.plot(df, tags, title='Trace: {}'.format(fin))
+    win.show()
+    qapp.exec_()

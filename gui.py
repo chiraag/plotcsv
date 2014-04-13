@@ -5,17 +5,8 @@ from pyqtgraph.Qt import QtGui, QtCore
 import plot_settings
 from profilehooks import profile
 
-class TagAxisItem(pg.AxisItem):
-    def setTickStrings(self, strings):
-        self._tickStr = dict(enumerate(strings))
-
-    def tickStrings(self, values, scale, spacing):
-        return [self._tickStr.get(va*scale, '') for va in values]
-
 class TracePlotItem(pg.ScatterPlotItem):
-    @profile
     def __init__(self, parent, df, settings):
-        print("start trace init")
         pg.ScatterPlotItem.__init__(self, size=1, symbol='s', pen=None, pxMode=False)
 
         self.settings = settings
@@ -30,23 +21,21 @@ class TracePlotItem(pg.ScatterPlotItem):
 
         parent.addItem(self)
         parent.addItem(self.textBox)
-        print("done trace init")
 
     def mouseClickEvent(self, ev):
         if ev.button() == QtCore.Qt.LeftButton:
-            time = self.settings.get_time(ev.pos().x())
+            cycle = int(ev.pos().x())
+            time = self.settings.get_time(cycle)
             tag = self.settings.get_tag(ev.pos().y())
             try:
                 val = self.idx_by_tag.loc[time, tag].val
-                self.textBox.setText('cycle: {}\n'.format(time) + val)
+                self.textBox.setText('cycle: {}\n'.format(cycle) + val)
             except KeyError:
-                self.textBox.setText('cycle: {}'.format(time))
+                self.textBox.setText('cycle: {}'.format(cycle))
 
             self.textBox.setPos(ev.pos())
 
 def plot(df, tags, title):
-    print("start plot")
-    tags = list(reversed(tags))
     settings = plot_settings.PlotSettings(tags)
 
     # Qt startup
@@ -59,9 +48,8 @@ def plot(df, tags, title):
     win.setWindowTitle(title)
 
     # Trace plot setup
-    tagAxis = TagAxisItem('left')
-    tagAxis.setTickStrings(tags)
-    tracePlot = layout.addPlot(axisItems={'left':tagAxis})
+    tracePlot = layout.addPlot()
+    tracePlot.getAxis('left').setTicks([[(settings.get_row_pos(tag), tag) for tag in tags]])
 
     tracePlot.showGrid(x=True, alpha=1)
     tracePlot.setMouseEnabled(x=True, y=False)
@@ -93,6 +81,5 @@ def plot(df, tags, title):
     tracePlot.sigXRangeChanged.connect(updateRegion)
 
     updateRegion()
-    print("start plot")
 
     return win, app
